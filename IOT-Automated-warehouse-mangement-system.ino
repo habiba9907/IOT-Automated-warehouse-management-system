@@ -20,7 +20,6 @@ FirebaseConfig config;
 
 // motors
 #define BELT1 2
-#define BELT2 18
 #define G2_1 25
 #define G2_2 26
 
@@ -48,12 +47,19 @@ unsigned long gateMotorStartTime = 0;
 unsigned long lastDHTRead = 0;
 
 bool beltStoppedByIR = false;
-bool beltReversed = false;
 unsigned long irStopStartTime = 0;
 
 int lastDoorStatus = 0;
 int lastWarehouseDoorStatus = 0;
 int lastBeltCmd = 1;
+
+unsigned long lastWifiCheck = 0;
+const unsigned long WIFI_CHECK_INTERVAL = 10000;
+
+bool fireActive = false;
+bool fireClearedShown = false;
+unsigned long fireClearedTime = 0;
+const unsigned long FIRE_CLEARED_DURATION = 3000;
 
 const unsigned long DHT_INTERVAL = 15000;
 const unsigned long IR_STOP_DURATION = 30000;
@@ -90,7 +96,6 @@ void setup() {
 
   // dc motors
   pinMode(BELT1, OUTPUT);
-  pinMode(BELT2, OUTPUT);
   pinMode(G2_1, OUTPUT);
   pinMode(G2_2, OUTPUT);
 
@@ -105,7 +110,7 @@ void setup() {
   // forward
   conveyorBeltMotorForward();
 
-  // gate1(item gate)
+  // gate1
   digitalWrite(G2_1, HIGH);
   digitalWrite(G2_2, LOW);
 
@@ -115,8 +120,26 @@ void setup() {
 
 void loop() {
 
+  // ---------------- WIFI RECONNECT ----------------
+  if (millis() - lastWifiCheck >= WIFI_CHECK_INTERVAL) {
+    lastWifiCheck = millis();
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi disconnected, reconnecting...");
+      WiFi.reconnect();
+      unsigned long reconnectStart = millis();
+      while (WiFi.status() != WL_CONNECTED && millis() - reconnectStart < 10000) {
+        delay(300);
+      }
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("WiFi reconnected");
+      } else {
+        Serial.println("WiFi reconnect failed");
+      }
+    }
+  }
+
   // ---------------- DHT ----------------
-  if (millis() - lastDHTRead >= DHT_INTERVAL) {
+  if (millis() - lastDHTRead >= DHT_INTERVAL && !fireActive && !fireClearedShown) {
     lastDHTRead = millis();
     float humidity = dht.readHumidity();
     float temperature = dht.readTemperature();
@@ -138,22 +161,47 @@ void loop() {
 
   // ---------------- FLAME ----------------
   int flameState = digitalRead(FLAME_PIN);
+  Serial.print("flameState: "); Serial.println(flameState);
+  Serial.print("fireActive: "); Serial.println(fireActive);
+  Serial.print("fireClearedShown: "); Serial.println(fireClearedShown);
+  Serial.print("timeDiff: "); Serial.println(millis() - fireClearedTime);
+
   if (flameState == HIGH) {
     digitalWrite(BUZZER, HIGH);
     Firebase.RTDB.setBool(&fbdo, "/warehouse/Fire_status", true);
-    Serial.println("FIRE DETECTED");
-    lcd.clear();
-    lcd.print("FIRE DETECTED");
+
+    if (!fireActive) {
+      fireActive = true;
+      fireClearedShown = false;
+      lcd.clear();
+      lcd.print("FIRE DETECTED");
+      Serial.println("FIRE DETECTED");
+    }
+
   } else {
     digitalWrite(BUZZER, LOW);
     Firebase.RTDB.setBool(&fbdo, "/warehouse/Fire_status", false);
+
+    if (fireActive) {
+      fireActive = false;
+      fireClearedShown = true;
+      fireClearedTime = millis();
+      lcd.clear();
+      lcd.print("Fire Cleared");
+      Serial.println("Fire Cleared");
+    }
+  }
+
+  if (fireClearedShown && millis() - fireClearedTime >= FIRE_CLEARED_DURATION) {
+    fireClearedShown = false;
+    lastDHTRead = millis() - DHT_INTERVAL;
   }
 
   // ---------------- IR ----------------
   int irState = digitalRead(IR_PIN);
   Firebase.RTDB.setBool(&fbdo, "/warehouse/IR_status", irState == LOW ? false : true);
 
-  if (irState == LOW && !beltStoppedByIR && !beltReversed) {
+  if (irState == LOW && !beltStoppedByIR) {
     conveyorBeltMotorStop();
     irStopStartTime = millis();
     beltStoppedByIR = true;
@@ -166,7 +214,7 @@ void loop() {
     Serial.println("Belt resumed forward after IR");
   }
 
-  // ---------------- CONTROL BELT FROM Firebase ----------------
+  // ---------------- BELT from Firebase ----------------
   if (!beltStoppedByIR) {
     if (Firebase.RTDB.getInt(&fbdo, "/belt_status")) {
       int beltCmd = fbdo.intData();
@@ -176,15 +224,9 @@ void loop() {
 
         if (beltCmd == 0) {
           conveyorBeltMotorStop();
-          beltReversed = false;
           Serial.println("Belt stopped by Firebase");
-        } else if (beltCmd == 2) {
-          conveyorBeltMotorReverse();
-          beltReversed = true;
-          Serial.println("Belt reversed by Firebase");
         } else if (beltCmd == 1) {
           conveyorBeltMotorForward();
-          beltReversed = false;
           Serial.println("Belt forward by Firebase");
         }
       }
@@ -217,7 +259,7 @@ void loop() {
     digitalWrite(G2_1, HIGH);
     digitalWrite(G2_2, LOW);
     gateMotorRunning = false;
-    Firebase.RTDB.setInt(&fbdo, "/door_status", 0);
+    Firebase.RTDB.setBool(&fbdo, "/door_status", false);
   }
 
   // ---------------- ALARM ----------------
@@ -247,22 +289,15 @@ void loop() {
   if (servoRunning && millis() - servoStartTime >= 20000) {
     gateServo.write(0);
     servoRunning = false;
-    Firebase.RTDB.setInt(&fbdo, "/warehouse/door_status", 0);
+    Firebase.RTDB.setBool(&fbdo, "/warehouse/door_status", false);
   }
 }
 
 // ---------------- BELT FUNCTIONS ----------------
 void conveyorBeltMotorForward() {
   digitalWrite(BELT1, HIGH);
-  digitalWrite(BELT2, LOW);
-}
-
-void conveyorBeltMotorReverse() {
-  digitalWrite(BELT1, LOW);
-  digitalWrite(BELT2, HIGH);
 }
 
 void conveyorBeltMotorStop() {
   digitalWrite(BELT1, LOW);
-  digitalWrite(BELT2, LOW);
 }
