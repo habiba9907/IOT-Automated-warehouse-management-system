@@ -255,19 +255,36 @@ void loop() {
     }
   }
 
-  if (gateMotorRunning && millis() - gateMotorStartTime >= 10000) {
-    digitalWrite(G2_1, HIGH);
-    digitalWrite(G2_2, LOW);
-    gateMotorRunning = false;
-    Firebase.RTDB.setBool(&fbdo, "/door_status", false);
+  if (gateMotorRunning) {
+    if (Firebase.RTDB.getInt(&fbdo, "/door_status")) {
+      if (fbdo.intData() == 0) {
+        digitalWrite(G2_1, HIGH);
+        digitalWrite(G2_2, LOW);
+        gateMotorRunning = false;
+        lastDoorStatus = 0;
+      }
+    }
+
+    if (gateMotorRunning && millis() - gateMotorStartTime >= 10000) {
+      digitalWrite(G2_1, HIGH);
+      digitalWrite(G2_2, LOW);
+      gateMotorRunning = false;
+      Firebase.RTDB.setBool(&fbdo, "/door_status", false);
+      lastDoorStatus = 0;
+    }
   }
 
   // ---------------- ALARM ----------------
   if (Firebase.RTDB.getInt(&fbdo, "/alarm")) {
-    if (fbdo.intData() == 1)
+    if (fbdo.intData() == 1) {
       digitalWrite(BUZZER, HIGH);
-    else
+      Firebase.RTDB.setBool(&fbdo, "/warehouse/buzzer", true);
+      Firebase.RTDB.setBool(&fbdo, "/warehouse/buzzer_status", true);
+    } else {
       digitalWrite(BUZZER, LOW);
+      Firebase.RTDB.setBool(&fbdo, "/warehouse/buzzer", false);
+      Firebase.RTDB.setBool(&fbdo, "/warehouse/buzzer_status", false);
+    }
   }
 
   // ---------------- SERVO ----------------
@@ -286,10 +303,21 @@ void loop() {
     }
   }
 
-  if (servoRunning && millis() - servoStartTime >= 20000) {
-    gateServo.write(0);
-    servoRunning = false;
-    Firebase.RTDB.setBool(&fbdo, "/warehouse/door_status", false);
+  if (servoRunning) {
+    if (Firebase.RTDB.getInt(&fbdo, "/warehouse/door_status")) {
+      if (fbdo.intData() == 0) {
+        gateServo.write(0);
+        servoRunning = false;
+        lastWarehouseDoorStatus = 0;
+      }
+    }
+
+    if (servoRunning && millis() - servoStartTime >= 20000) {
+      gateServo.write(0);
+      servoRunning = false;
+      Firebase.RTDB.setBool(&fbdo, "/warehouse/door_status", false);
+      lastWarehouseDoorStatus = 0;
+    }
   }
 }
 
