@@ -11,8 +11,8 @@
 #include "belt.h"
 #include "gates.h"
 
-#define WIFI_SSID "WE2025"
-#define WIFI_PASSWORD "NMY2004#"
+#define WIFI_SSID "wifiname"
+#define WIFI_PASSWORD "Wifipasswords"
 
 FirebaseData fbdo;
 FirebaseAuth auth;
