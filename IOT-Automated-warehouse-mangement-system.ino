@@ -7,12 +7,12 @@
 #include <LiquidCrystal_I2C.h>
 
 // wifi
-#define WIFI_SSID "WE2025"
-#define WIFI_PASSWORD "NMY2004#"
+#define WIFI_SSID "wifiname"
+#define WIFI_PASSWORD "Wifipasswords"
 
 // firebase
-#define API_KEY "AIzaSyCpp66md_gW7bpF6z2yP2l5dFDxH1RS1DM"
-#define DATABASE_URL "https://iot-warehouse-4029a-default-rtdb.firebaseio.com/"
+#define API_KEY "apikey"
+#define DATABASE_URL "DBURL"
 
 FirebaseData fbdo;
 FirebaseAuth auth;
